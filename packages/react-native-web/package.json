@@ -19,7 +19,7 @@
     "array-find-index": "^1.0.2",
     "create-react-class": "^15.7.0",
     "deep-assign": "^3.0.0",
-    "fbjs": "^3.0.0",
+    "fbjs": "^3.0.3",
     "hyphenate-style-name": "^1.0.4",
     "inline-style-prefixer": "^6.0.0",
     "normalize-css-color": "^1.0.2",
