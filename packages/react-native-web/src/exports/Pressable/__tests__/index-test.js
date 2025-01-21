@@ -1,10 +1,14 @@
-/* eslint-env jasmine, jest */
+/**
+ * Copyright (c) Nicolas Gallagher.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
 
 import React from 'react';
 import Pressable from '../';
-import { act } from 'react-dom/test-utils';
 import { createEventTarget } from 'dom-event-testing-library';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 
 describe('components/Pressable', () => {
   test('default', () => {
@@ -21,7 +25,9 @@ describe('components/Pressable', () => {
 
   describe('prop "accessibilityLiveRegion"', () => {
     test('value is set', () => {
-      const { container } = render(<Pressable accessibilityLiveRegion="polite" />);
+      const { container } = render(
+        <Pressable accessibilityLiveRegion="polite" />
+      );
       expect(container.firstChild).toMatchSnapshot();
     });
   });
@@ -38,13 +44,18 @@ describe('components/Pressable', () => {
     });
 
     test('value alters HTML element', () => {
-      const { container } = render(<Pressable accessibilityRole="link" />);
+      const { container } = render(<Pressable accessibilityRole="article" />);
       expect(container.firstChild).toMatchSnapshot();
     });
   });
 
   test('prop "disabled"', () => {
     const { container } = render(<Pressable disabled={true} />);
+    expect(container.firstChild).toMatchSnapshot();
+  });
+
+  test('prop "href"', () => {
+    const { container } = render(<Pressable href="#href" />);
     expect(container.firstChild).toMatchSnapshot();
   });
 
@@ -63,7 +74,9 @@ describe('components/Pressable', () => {
     act(() => {
       ({ container } = render(
         <Pressable
-          children={({ focused }) => (focused ? <div data-testid="focus-content" /> : null)}
+          children={({ focused }) =>
+            focused ? <div data-testid="focus-content" /> : null
+          }
           onBlur={onBlur}
           onFocus={onFocus}
           ref={ref}
@@ -86,6 +99,32 @@ describe('components/Pressable', () => {
     expect(container.firstChild).toMatchSnapshot();
   });
 
+  test('focus interaction (disabled)', () => {
+    const onBlur = jest.fn();
+    const onFocus = jest.fn();
+    const ref = React.createRef();
+    act(() => {
+      render(
+        <Pressable
+          disabled={true}
+          onBlur={onBlur}
+          onFocus={onFocus}
+          ref={ref}
+        />
+      );
+    });
+    const target = createEventTarget(ref.current);
+    const body = createEventTarget(document.body);
+    act(() => {
+      target.focus();
+    });
+    expect(onFocus).toBeCalled();
+    act(() => {
+      body.focus({ relatedTarget: target.node });
+    });
+    expect(onBlur).toBeCalled();
+  });
+
   test('hover interaction', () => {
     let container;
     const onHoverIn = jest.fn();
@@ -94,7 +133,9 @@ describe('components/Pressable', () => {
     act(() => {
       ({ container } = render(
         <Pressable
-          children={({ hovered }) => (hovered ? <div data-testid="hover-content" /> : null)}
+          children={({ hovered }) =>
+            hovered ? <div data-testid="hover-content" /> : null
+          }
           onHoverIn={onHoverIn}
           onHoverOut={onHoverOut}
           ref={ref}
@@ -116,7 +157,7 @@ describe('components/Pressable', () => {
     expect(container.firstChild).toMatchSnapshot();
   });
 
-  test('press interaction', () => {
+  test('press interaction (pointer)', () => {
     let container;
     const onContextMenu = jest.fn();
     const onPress = jest.fn();
@@ -126,7 +167,9 @@ describe('components/Pressable', () => {
     act(() => {
       ({ container } = render(
         <Pressable
-          children={({ pressed }) => (pressed ? <div data-testid="press-content" /> : null)}
+          children={({ pressed }) =>
+            pressed ? <div data-testid="press-content" /> : null
+          }
           onContextMenu={onContextMenu}
           onPress={onPress}
           onPressIn={onPressIn}
@@ -157,6 +200,111 @@ describe('components/Pressable', () => {
     expect(onContextMenu).toBeCalled();
   });
 
+  describe('press interaction (keyboard)', () => {
+    test('trigger press when keyup is on the same element', () => {
+      let container;
+      const onPress = jest.fn();
+      const onPressIn = jest.fn();
+      const onPressOut = jest.fn();
+      const ref = React.createRef();
+
+      function TestCase() {
+        const [shown, setShown] = React.useState(true);
+        return shown ? (
+          <Pressable
+            children={({ pressed }) =>
+              pressed ? <div data-testid="press-content" /> : null
+            }
+            onPress={(e) => {
+              onPress(e);
+              setShown(false);
+            }}
+            onPressIn={onPressIn}
+            onPressOut={onPressOut}
+            ref={ref}
+            style={({ pressed }) => [pressed && { outline: 'press-ring' }]}
+          />
+        ) : null;
+      }
+
+      act(() => {
+        ({ container } = render(<TestCase />));
+      });
+      const target = createEventTarget(ref.current);
+      expect(container.firstChild).toMatchSnapshot();
+      act(() => {
+        target.keydown({ key: 'Enter' });
+        jest.runAllTimers();
+      });
+      expect(onPressIn).toBeCalled();
+      expect(container.firstChild).toMatchSnapshot();
+      act(() => {
+        target.keyup({ key: 'Enter' });
+        jest.runAllTimers();
+      });
+      expect(onPressOut).toBeCalled();
+      expect(onPress).toBeCalled();
+      expect(container.firstChild).toMatchSnapshot();
+    });
+
+    test('ignore press when keyup is on a different element', () => {
+      const onPress = jest.fn();
+      const firstRef = React.createRef();
+
+      function TestCase() {
+        return (
+          <Pressable
+            onPress={(e) => {
+              onPress(e);
+            }}
+            ref={firstRef}
+          />
+        );
+      }
+
+      act(() => {
+        render(<TestCase />);
+      });
+      const target = createEventTarget(firstRef.current);
+      const body = createEventTarget(document.body);
+      act(() => {
+        target.keydown({ key: 'Enter' });
+        body.keyup({ key: 'Enter' });
+        jest.runAllTimers();
+      });
+      expect(onPress).not.toBeCalled();
+    });
+  });
+
+  test('press interaction as button (keyboard)', () => {
+    const onPress = jest.fn();
+    const preventDefault = jest.fn();
+    const ref = React.createRef();
+
+    function TestCase() {
+      return (
+        <Pressable
+          onPress={(e) => {
+            onPress(e);
+          }}
+          ref={ref}
+          role="button"
+        />
+      );
+    }
+
+    act(() => {
+      render(<TestCase />);
+    });
+    const target = createEventTarget(ref.current);
+    act(() => {
+      target.keydown({ key: ' ', preventDefault });
+      jest.runAllTimers();
+    });
+    // Calling preventDefault prevents native 'click' event dispatch
+    expect(preventDefault).not.toHaveBeenCalled();
+  });
+
   describe('prop "ref"', () => {
     test('value is set', () => {
       const ref = jest.fn();
@@ -173,7 +321,6 @@ describe('components/Pressable', () => {
       expect(typeof node.measure === 'function');
       expect(typeof node.measureLayout === 'function');
       expect(typeof node.measureInWindow === 'function');
-      expect(typeof node.setNativeProps === 'function');
     });
   });
 
