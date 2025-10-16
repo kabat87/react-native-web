@@ -1,6 +1,6 @@
 /**
  * Copyright (c) Nicolas Gallagher.
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -12,7 +12,7 @@ import * as React from 'react';
 import StyleSheet from '../StyleSheet';
 import createElement from '../createElement';
 
-const ANIMATION_DURATION = 300;
+const ANIMATION_DURATION = 250;
 
 function getAnimationStyle(animationType, visible) {
   if (animationType === 'slide') {
@@ -37,6 +37,7 @@ function ModalAnimation(props: ModalAnimationProps): React.Node {
 
   const [isRendering, setIsRendering] = React.useState(false);
   const wasVisible = React.useRef(false);
+  const wasRendering = React.useRef(false);
 
   const isAnimated = animationType && animationType !== 'none';
 
@@ -54,13 +55,17 @@ function ModalAnimation(props: ModalAnimationProps): React.Node {
         }
       } else {
         setIsRendering(false);
-        if (onDismiss) {
-          onDismiss();
-        }
       }
     },
-    [onDismiss, onShow, visible]
+    [onShow, visible]
   );
+
+  React.useEffect(() => {
+    if (wasRendering.current && !isRendering && onDismiss) {
+      onDismiss();
+    }
+    wasRendering.current = isRendering;
+  }, [isRendering, onDismiss]);
 
   React.useEffect(() => {
     if (visible) {
@@ -75,7 +80,9 @@ function ModalAnimation(props: ModalAnimationProps): React.Node {
 
   return isRendering || visible
     ? createElement('div', {
-        style: isRendering ? getAnimationStyle(animationType, visible) : styles.hidden,
+        style: isRendering
+          ? getAnimationStyle(animationType, visible)
+          : styles.hidden,
         onAnimationEnd: animationEndCallback,
         children
       })
@@ -93,12 +100,12 @@ const styles = StyleSheet.create({
   },
   animatedIn: {
     animationDuration: `${ANIMATION_DURATION}ms`,
-    animationTimingFunction: 'ease-in'
+    animationTimingFunction: 'cubic-bezier(0.215, 0.61, 0.355, 1)'
   },
   animatedOut: {
     pointerEvents: 'none',
     animationDuration: `${ANIMATION_DURATION}ms`,
-    animationTimingFunction: 'ease-out'
+    animationTimingFunction: 'cubic-bezier(0.47, 0, 0.745, 0.715)'
   },
   fadeIn: {
     opacity: 1,
@@ -115,17 +122,17 @@ const styles = StyleSheet.create({
     }
   },
   slideIn: {
-    transform: [{ translateY: '0%' }],
+    transform: 'translateY(0%)',
     animationKeyframes: {
-      '0%': { transform: [{ translateY: '100%' }] },
-      '100%': { transform: [{ translateY: '0%' }] }
+      '0%': { transform: 'translateY(100%)' },
+      '100%': { transform: 'translateY(0%)' }
     }
   },
   slideOut: {
-    transform: [{ translateY: '100%' }],
+    transform: 'translateY(100%)',
     animationKeyframes: {
-      '0%': { transform: [{ translateY: '0%' }] },
-      '100%': { transform: [{ translateY: '100%' }] }
+      '0%': { transform: 'translateY(0%)' },
+      '100%': { transform: 'translateY(100%)' }
     }
   },
   hidden: {
@@ -133,9 +140,25 @@ const styles = StyleSheet.create({
   }
 });
 
-const animatedSlideInStyles = [styles.container, styles.animatedIn, styles.slideIn];
-const animatedSlideOutStyles = [styles.container, styles.animatedOut, styles.slideOut];
-const animatedFadeInStyles = [styles.container, styles.animatedIn, styles.fadeIn];
-const animatedFadeOutStyles = [styles.container, styles.animatedOut, styles.fadeOut];
+const animatedSlideInStyles = [
+  styles.container,
+  styles.animatedIn,
+  styles.slideIn
+];
+const animatedSlideOutStyles = [
+  styles.container,
+  styles.animatedOut,
+  styles.slideOut
+];
+const animatedFadeInStyles = [
+  styles.container,
+  styles.animatedIn,
+  styles.fadeIn
+];
+const animatedFadeOutStyles = [
+  styles.container,
+  styles.animatedOut,
+  styles.fadeOut
+];
 
 export default ModalAnimation;

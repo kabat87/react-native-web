@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -116,10 +116,15 @@ const Transitions = Object.freeze({
   }
 });
 
-const isActiveSignal = (signal) =>
-  signal === RESPONDER_ACTIVE_PRESS_START || signal === RESPONDER_ACTIVE_LONG_PRESS_START;
+const getElementRole = (element) => element.getAttribute('role');
 
-const isButtonRole = (element) => element.getAttribute('role') === 'button';
+const getElementType = (element) => element.tagName.toLowerCase();
+
+const isActiveSignal = (signal) =>
+  signal === RESPONDER_ACTIVE_PRESS_START ||
+  signal === RESPONDER_ACTIVE_LONG_PRESS_START;
+
+const isButtonRole = (element) => getElementRole(element) === 'button';
 
 const isPressStartSignal = (signal) =>
   signal === RESPONDER_INACTIVE_PRESS_START ||
@@ -130,13 +135,11 @@ const isTerminalSignal = (signal) =>
   signal === RESPONDER_TERMINATED || signal === RESPONDER_RELEASE;
 
 const isValidKeyPress = (event) => {
-  const key = event.key;
-  const target = event.currentTarget;
-  const role = target.getAttribute('role');
+  const { key, target } = event;
   const isSpacebar = key === ' ' || key === 'Spacebar';
-  return (
-    !event.repeat && (key === 'Enter' || (isSpacebar && (role === 'button' || role === 'menuitem')))
-  );
+  const isButtonish =
+    getElementType(target) === 'button' || isButtonRole(target);
+  return key === 'Enter' || (isSpacebar && isButtonish);
 };
 
 const DEFAULT_LONG_PRESS_DELAY_MS = 450; // 500 - 50
@@ -224,13 +227,13 @@ export default class PressResponder {
   _longPressDispatched: ?boolean = false;
   _pressDelayTimeout: ?TimeoutID = null;
   _pressOutDelayTimeout: ?TimeoutID = null;
-  _responder: ?any;
   _selectionTerminated: ?boolean;
   _touchActivatePosition: ?$ReadOnly<{|
     pageX: number,
     pageY: number
   |}>;
   _touchState: TouchState = NOT_RESPONDER;
+  _responderElement: ?HTMLElement = null;
 
   constructor(config: PressResponderConfig) {
     this.configure(config);
@@ -266,7 +269,6 @@ export default class PressResponder {
       this._cancelPressOutDelayTimeout();
 
       this._longPressDispatched = false;
-      this._responder = event.currentTarget;
       this._selectionTerminated = false;
       this._touchState = NOT_RESPONDER;
       this._isPointerTouch = event.nativeEvent.type === 'touchstart';
@@ -302,9 +304,30 @@ export default class PressResponder {
     };
 
     const keyupHandler = (event: KeyboardEvent) => {
-      if (this._touchState !== NOT_RESPONDER) {
+      const { onPress } = this._config;
+      const { target } = event;
+
+      if (this._touchState !== NOT_RESPONDER && isValidKeyPress(event)) {
         end(event);
         document.removeEventListener('keyup', keyupHandler);
+
+        const role = target.getAttribute('role');
+        const elementType = getElementType(target);
+
+        const isNativeInteractiveElement =
+          role === 'link' ||
+          elementType === 'a' ||
+          elementType === 'button' ||
+          elementType === 'input' ||
+          elementType === 'select' ||
+          elementType === 'textarea';
+        const isActiveElement = this._responderElement === target;
+
+        if (onPress != null && !isNativeInteractiveElement && isActiveElement) {
+          onPress(event);
+        }
+
+        this._responderElement = null;
       }
     };
 
@@ -321,12 +344,26 @@ export default class PressResponder {
       },
 
       onKeyDown: (event) => {
-        if (isValidKeyPress(event)) {
+        const { disabled } = this._config;
+        const { key, target } = event;
+        if (!disabled && isValidKeyPress(event)) {
           if (this._touchState === NOT_RESPONDER) {
             start(event, false);
+            this._responderElement = target;
             // Listen to 'keyup' on document to account for situations where
             // focus is moved to another element during 'keydown'.
             document.addEventListener('keyup', keyupHandler);
+          }
+          const isSpacebarKey = key === ' ' || key === 'Spacebar';
+          const role = getElementRole(target);
+          const isButtonLikeRole = role === 'button' || role === 'menuitem';
+          if (
+            isSpacebarKey &&
+            isButtonLikeRole &&
+            getElementType(target) !== 'button'
+          ) {
+            // Prevent spacebar scrolling the window if using non-native button
+            event.preventDefault();
           }
           event.stopPropagation();
         }
@@ -407,7 +444,11 @@ export default class PressResponder {
       onContextMenu: (event: any): void => {
         const { disabled, onLongPress } = this._config;
         if (!disabled) {
-          if (onLongPress != null && this._isPointerTouch && !event.defaultPrevented) {
+          if (
+            onLongPress != null &&
+            this._isPointerTouch &&
+            !event.defaultPrevented
+          ) {
             event.preventDefault();
             event.stopPropagation();
           }
@@ -430,11 +471,13 @@ export default class PressResponder {
     if (Transitions[prevState] != null) {
       nextState = Transitions[prevState][signal];
     }
-    if (this._responder == null && signal === RESPONDER_RELEASE) {
+    if (this._touchState === NOT_RESPONDER && signal === RESPONDER_RELEASE) {
       return;
     }
     if (nextState == null || nextState === ERROR) {
-      console.error(`PressResponder: Invalid signal ${signal} for state ${prevState} on responder`);
+      console.error(
+        `PressResponder: Invalid signal ${signal} for state ${prevState} on responder`
+      );
     } else if (prevState !== nextState) {
       this._performTransitionSideEffects(prevState, nextState, signal, event);
       this._touchState = nextState;
@@ -452,7 +495,12 @@ export default class PressResponder {
     event: ResponderEvent
   ): void {
     if (isTerminalSignal(signal)) {
-      this._isPointerTouch = false;
+      // Pressable suppression of contextmenu on windows.
+      // On Windows, the contextmenu is displayed after pointerup.
+      // https://github.com/necolas/react-native-web/issues/2296
+      setTimeout(() => {
+        this._isPointerTouch = false;
+      }, 0);
       this._touchActivatePosition = null;
       this._cancelLongPressDelayTimeout();
     }
@@ -480,7 +528,8 @@ export default class PressResponder {
       const { onLongPress, onPress } = this._config;
       if (onPress != null) {
         const isPressCanceledByLongPress =
-          onLongPress != null && prevState === RESPONDER_ACTIVE_LONG_PRESS_START;
+          onLongPress != null &&
+          prevState === RESPONDER_ACTIVE_LONG_PRESS_START;
         if (!isPressCanceledByLongPress) {
           // If we never activated (due to delays), activate and deactivate now.
           if (!isNextActive && !isPrevActive) {
